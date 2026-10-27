@@ -1,10 +1,7 @@
 # Data Proposal: Hemograma (CBC) -> tipar de anemie, risc și teste următoare
 
 **Echipa:**
-Baroană Alexandru-Cătălin
-Crăciun Denis-Cristian
-Jitescu Silviu-Cristian
-Pricop Alexandru
+Baroană Alexandru-Cătălin, Crăciun Denis-Cristian, Jitescu Silviu-Cristian, Pricop Alexandru
 
 ## 1. De ce acest dataset?
 
@@ -96,6 +93,6 @@ Etichetele originale diferă între surse, deci `pattern` și `severity` se **re
 
 ## 5. (Opțional) Utilitate
 
-Comparăm un model mic (sau LLM) fine-tunat pe setul îmbogățit cu același model antrenat doar pe valori + etichetă brută, pe un set de test separat. Măsurăm acuratețea pe `pattern` și `risk`, plus acordul recomandărilor cu un eșantion de ~50 de înregistrări verificat manual față de ghiduri publice.
+Comparăm un model mic (sau LLM) fine-tunat pe setul îmbogățit cu același model antrenat doar pe valori + etichetă brută, pe un set de test separat. Măsurăm acuratețea pe `pattern` și `risk`, plus validarea recomandărilor dintr-un eșantion de ~50 de înregistrări folosind ghiduri publice.
 
 **Eșantion:** `data/sample.csv`, 20–50 de rânduri reale din B și C, fără identificatori.
