@@ -1,11 +1,8 @@
 import pandas as pd
 import numpy as np
 
+
 def assign_recommendations(row):
-    """
-    Generează teste recomandate și raționament clinic extins,
-    incluzând tratarea cazurilor cu sex necunoscut în zona de graniță (12-13 g/dL).
-    """
     pattern = row["pattern"]
     severity = row["severity"]
     mcv = row.get("mcv_fl", np.nan)
@@ -13,7 +10,6 @@ def assign_recommendations(row):
     hgb = row.get("hgb_g_dl", np.nan)
     sex = row.get("sex", np.nan)
 
-    # Caz special: Sex necunoscut în zona de graniță 12.0 - 13.0 g/dL
     if pd.isna(sex) and pd.notna(hgb) and 12.0 <= hgb < 13.0:
         return (
             "repeat CBC; serum ferritin",
@@ -21,9 +17,8 @@ def assign_recommendations(row):
         )
 
     if pattern == "normal":
-        return ("", "All core CBC parameters are within normal reference ranges.")
+        return "", "All core CBC parameters are within normal reference ranges."
 
-    # 1. Microcytic Hypochromic: discriminare carență de fier vs. trăsătură talasemică (Mentzer)
     if pattern == "microcytic hypochromic":
         if pd.notna(mcv) and pd.notna(rbc) and rbc > 0:
             mentzer = mcv / rbc
@@ -37,7 +32,6 @@ def assign_recommendations(row):
             "Microcytic hypochromic pattern; classic indication for iron deficiency anemia evaluation."
         )
 
-    # 2. Macrocytic: discriminare severă vs. moderată
     if pattern == "macrocytic":
         if pd.notna(mcv) and mcv > 110.0:
             return (
@@ -49,7 +43,6 @@ def assign_recommendations(row):
             "Macrocytic anemia; evaluate for B12/folate deficiency or secondary endocrine causes."
         )
 
-    # 3. Normocytic: diferențiere severitate
     if pattern == "normocytic":
         if severity == "severe":
             return (
@@ -73,7 +66,6 @@ def enrich_cbc(df):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Flag HGB cu gestionare duală când sexul lipsește
     def flag_hgb(row):
         h = row.get("hgb_g_dl", np.nan)
         if pd.isna(h):
@@ -84,7 +76,6 @@ def enrich_cbc(df):
         elif sex == "F":
             return "low" if h < 12.0 else "normal"
         else:
-            # Sex necunoscut: <12.0 este low cert; 12.0-13.0 este borderline; >=13.0 este normal
             if h < 12.0:
                 return "low"
             elif h < 13.0:
@@ -96,7 +87,6 @@ def enrich_cbc(df):
     df["flags_mch"] = np.where(df["mch_pg"] < 27.0, "low", np.where(df["mch_pg"] > 33.0, "high", "normal"))
     df["flags_mchc"] = np.where(df["mchc_g_dl"] < 32.0, "low", np.where(df["mchc_g_dl"] > 36.0, "high", "normal"))
 
-    # Morphological Pattern
     def pattern(row):
         if row["flags_hgb"] == "normal":
             return "normal"
@@ -108,7 +98,6 @@ def enrich_cbc(df):
 
     df["pattern"] = df.apply(pattern, axis=1)
 
-    # Severity & Risk
     def severity(row):
         if row["flags_hgb"] == "normal":
             return "none"
@@ -132,7 +121,6 @@ def enrich_cbc(df):
         "severe": "high"
     })
 
-    # Asignare teste și rationale extins
     recs_rationales = df.apply(assign_recommendations, axis=1)
     df["recommended_tests"] = [r[0] for r in recs_rationales]
     df["rationale"] = [r[1] for r in recs_rationales]
@@ -141,9 +129,6 @@ def enrich_cbc(df):
 
 
 def process_all_datasets():
-    # ==========================================
-    # 1. SURSA C: Mendeley Raw
-    # ==========================================
     df_c = pd.read_csv("raw_data/mendeley_raw.csv")
     df_c.columns = df_c.columns.str.strip()
 
@@ -168,19 +153,14 @@ def process_all_datasets():
         df_c["sex"] = df_c["sex"].astype(str).str.strip().str.upper()
         df_c["sex"] = df_c["sex"].replace({"0": "F", "1": "M", "FEMALE": "F", "MALE": "M"})
         df_c["sex"] = df_c["sex"].apply(lambda x: x if x in ["F", "M"] else np.nan)
-    
-    # Asigurare etichetă binară (0/1)
+
     df_c["source_label"] = pd.to_numeric(df_c["source_label"], errors="coerce").fillna(0).astype(int)
     df_c["original_diagnosis"] = df_c["source_label"].map({0: "Non-anemic", 1: "Anemic"})
     df_c["source"] = "mendeley_raw"
 
-    # ==========================================
-    # 2. SURSA B: Kaggle Types (Detectare robustă coloană text + mapare binară)
-    # ==========================================
     df_b = pd.read_csv("raw_data/kaggle_types.csv")
     df_b.columns = df_b.columns.str.strip()
 
-    # Detectează automat coloana cu textul diagnosticului
     type_col_b = next((c for c in df_b.columns if any(k in c.upper() for k in ["DIAGNOSIS"])), "Type")
 
     df_b = df_b.rename(columns={
@@ -191,8 +171,7 @@ def process_all_datasets():
         "RBC": "rbc_m_ul",
         type_col_b: "original_diagnosis"
     })
-    
-    # Mapare automată la 0 și 1: Healthy/Normal devine 0, restul bolilor devin 1
+
     def map_diagnosis_to_binary(val):
         if pd.isna(val):
             return 1
@@ -205,9 +184,6 @@ def process_all_datasets():
     df_b["source"] = "kaggle_types"
     df_b["sex"] = np.nan
 
-    # ==========================================
-    # 3. SURSA A: Kaggle Anemia (Rao)
-    # ==========================================
     df_a = pd.read_csv("raw_data/kaggle_anemia.csv")
     df_a.columns = df_a.columns.str.strip()
     hgb_col_a = next((c for c in df_a.columns if "HEMO" in c.upper() or "HGB" in c.upper()), "Hemoglobin")
@@ -231,9 +207,6 @@ def process_all_datasets():
     df_a["source"] = "kaggle_anemia"
     df_a["rbc_m_ul"] = np.nan
 
-    # ==========================================
-    # 4. CONCATENARE DOAR COLOANE STRICT COMUNE
-    # ==========================================
     common_cols = [
         "source", "source_label", "original_diagnosis", "sex",
         "hgb_g_dl", "mcv_fl", "mch_pg", "mchc_g_dl", "rbc_m_ul"
@@ -246,13 +219,10 @@ def process_all_datasets():
     df_train = pd.concat([df_a, df_b, df_c], ignore_index=True)
     df_train = df_train.dropna(subset=["hgb_g_dl", "mcv_fl", "mch_pg", "mchc_g_dl"])
     df_train = df_train.drop_duplicates(subset=["hgb_g_dl", "mcv_fl", "mch_pg", "mchc_g_dl"])
-    df_train["id"] = [f"train-{i+1:04d}" for i in range(len(df_train))]
+    df_train["id"] = [f"train-{i + 1:04d}" for i in range(len(df_train))]
 
     df_train = enrich_cbc(df_train)
 
-    # ==========================================
-    # 5. SET DE TEST (Shahane)
-    # ==========================================
     df_test = pd.read_csv("raw_data/anemia_diagnosis_dataset.csv")
     df_test.columns = df_test.columns.str.strip()
     hgb_col_test = next((c for c in df_test.columns if any(k in c.upper() for k in ["HGB", "HB", "HEMO"])), "HGB")
@@ -272,14 +242,11 @@ def process_all_datasets():
 
     df_test["source"] = "shahane_test"
     df_test["source_label"] = np.nan
-    df_test["original_diagnosis"] = "Unlabeled test data"
+    df_test["original_diagnosis"] = "Unlabeled test raw_data"
     df_test = df_test.dropna(subset=["hgb_g_dl", "mcv_fl", "mch_pg", "mchc_g_dl"])
-    df_test["id"] = [f"test-{i+1:04d}" for i in range(len(df_test))]
+    df_test["id"] = [f"test-{i + 1:04d}" for i in range(len(df_test))]
     df_test = enrich_cbc(df_test)
 
-    # ==========================================
-    # 6. EXPORT FINAL
-    # ==========================================
     final_cols = [
         "id", "source", "source_label", "original_diagnosis", "sex",
         "hgb_g_dl", "mcv_fl", "mch_pg", "mchc_g_dl", "rbc_m_ul",
@@ -291,17 +258,15 @@ def process_all_datasets():
     df_train = df_train[final_cols]
     df_test = df_test[[c for c in final_cols if c in df_test.columns]]
 
-    df_train.to_csv("data/train_unified.csv", index=False, encoding="utf-8")
-    df_train.to_json("data/train_unified.jsonl", orient="records", lines=True, force_ascii=False)
+    df_train.to_csv("raw_data/train_unified.csv", index=False, encoding="utf-8")
+    df_train.to_json("raw_data/train_unified.jsonl", orient="records", lines=True, force_ascii=False)
 
-    df_test.to_csv("data/test_unified.csv", index=False, encoding="utf-8")
-    df_test.to_json("data/test_unified.jsonl", orient="records", lines=True, force_ascii=False)
+    df_test.to_csv("raw_data/test_unified.csv", index=False, encoding="utf-8")
+    df_test.to_json("raw_data/test_unified.jsonl", orient="records", lines=True, force_ascii=False)
 
-    print("\n--- SUMAR TRAIN DATASET ---")
     print(df_train["source"].value_counts())
-    print("\nDistribuție source_label (0/1):")
+    print("\n")
     print(df_train["source_label"].value_counts())
     print(f"\nTotal Train: {len(df_train)} rânduri | Total Test: {len(df_test)} rânduri")
 
-if __name__ == "__main__":
-    process_all_datasets()
+process_all_datasets()
